@@ -87,7 +87,7 @@ async function main() {
                             console.log('STARTING COPY OF HELM CHART TO SERVER ...');
                             childProcess(`scp -r -i ~/.ssh/id_gustavo.pub chart/* kb1.quanticotrends.com:/home/ubuntu/kubecode/${projectData.namespace}/`, function (error, stdout, stderr) {
                                 console.log('UPGRADING HELM...');
-                                childProcess(`ssh -i ~/.ssh/id_gustavo.pub ubuntu@kb1.quanticotrends.com helm upgrade ${projectData.namespace} /home/ubuntu/kubecode/${projectData.namespace}`, function (error, stdout, stderr) {
+                                childProcess(`ssh -i ~/.ssh/id_gustavo.pub ubuntu@kb1.quanticotrends.com helm upgrade --install ${projectData.namespace} --namespace ${projectData.namespace} /home/ubuntu/kubecode/${projectData.namespace}`, function (error, stdout, stderr) {
                                     console.log(stdout);
                                     console.log('=============================')
                                     console.log('FINALIZO')
