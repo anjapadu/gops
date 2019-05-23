@@ -1,6 +1,6 @@
 {
   "name": "@anjapadu/gops",
-  "version": "1.0.3",
+  "version": "1.1.6",
   "main": "./index.js",
   "license": "MIT",
   "bin": {
@@ -8,7 +8,8 @@
   },
   "preferGlobal": true,
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "postinstall": "gops config"
   },
   "author": "",
   "description": "",

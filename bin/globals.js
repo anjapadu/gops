@@ -4,22 +4,116 @@ const notifier = require('node-notifier');
 const shell = require('../utils');
 let currentDir = process.cwd();
 var childProcess = require('child_process').exec;
+// var prompt = require('prompt');
+const rl = require('readline').createInterface({
+    input: process.stdin,
+    output: process.stdout
+})
+
+const namespaceQuestion = () => {
+    return new Promise((resolve, reject) => {
+        rl.question('Project container registry namespace: ', (answer) => {
+            resolve(answer)
+        })
+    })
+}
+const imageQuestion = () => {
+    return new Promise((resolve, reject) => {
+        rl.question('Project image name: ', (answer) => {
+            resolve(answer)
+        })
+    })
+}
+const versionQuestion = () => {
+    return new Promise((resolve, reject) => {
+        rl.question('Project version (Will be used as tag): ', (answer) => {
+            resolve(answer)
+        })
+    })
+}
+const registryQuestion = () => {
+    return new Promise((resolve, reject) => {
+        rl.question('Registry endpoint ( registry.ng.bluemix.net/): ', (answer) => {
+            resolve(answer)
+        })
+    })
+}
+const sshQuestion = (question = 'Public key route ( /Users/username/.ssh/name.pub): ') => {
+    return new Promise((resolve, reject) => {
+        rl.question(question, (answer) => {
+            if (!answer || answer.trim().length <= 3) {
+                resolve(sshQuestion('Please add a valid route ( /Users/username/.ssh/name.pub): '));
+            } else {
+                if (!fs.existsSync(answer)) {
+                    console.log('Public key route invalid.');
+                    resolve(sshQuestion("Please add a valid route ( /Users/username/.ssh/name.pub): "))
+                } else {
+                    resolve(answer)
+                }
+            }
+        })
+    })
+}
+
+
+const checkSshKey = () => {
+    return new Promise(async (resolve, reject) => {
+        let rawGlobals;
+        try {
+            rawGlobals = fs.readFileSync(__dirname + '/global.json');
+            rawGlobals = JSON.parse(rawGlobals);
+            if (fs.existsSync(rawGlobals.publicKey))
+                resolve(rawGlobals.publicKey);
+            else
+                throw new Error()
+
+        } catch (e) {
+            let pq = await sshQuestion('You dont have a ssh key associated. Please add a route for it ( /Users/username/.ssh/name.pub): ');
+            rl.close();
+            rawGlobals = {
+                publicKey: pq
+            }
+            fs.writeFileSync(__dirname + '/global.json', JSON.stringify(rawGlobals, null, 4));
+            resolve(rawGlobals.publicKey)
+        }
+    })
+}
+
 
 async function main() {
     let command = process.argv[2];
+
+    if (command == 'config') {
+        await checkSshKey();
+        process.exit();
+    }
+
+    let rawdata;
+    let projectData;
+    try {
+        rawdata = fs.readFileSync(currentDir + '/_details.json');
+        projectData = JSON.parse(rawdata);
+    } catch (e) {
+        console.log('No hay archivo _details.json');
+        let nq = await namespaceQuestion();
+        let iq = await imageQuestion();
+        let vq = await versionQuestion();
+        let rq = await registryQuestion();
+        rl.close()
+        projectData = {
+            "namespace": nq.trim(),
+            "image": iq.trim(),
+            "version": vq.trim(),
+            "tag": vq.trim(),
+            "registryUrl": !rq || rq.trim() == '' ? 'registry.ng.bluemix.net/' : rq.trim()
+        }
+        fs.writeFileSync(`${currentDir}/_details.json`, JSON.stringify(projectData, null, 4));
+    }
+
+    const sshKey = await checkSshKey();
     switch (command) {
+
         case 'image':
-            let rawdata;
-            try {
-                rawdata = fs.readFileSync(currentDir + '/_details.json');
-            } catch (e) {
-                console.log('No hay archivo _details.json');
-                console.log('---- PARA INICIAR ----')
-                console.log('----- gops init ------')
-                console.log('----------------------')
-                process.exit()
-            }
-            let projectData = JSON.parse(rawdata);
             let versionArray = projectData.version.split('.');
             let changeToDo = process.argv[3];
             switch (changeToDo) {
@@ -41,7 +135,10 @@ async function main() {
                 'docker build --tag ' + newTag + ' .',
                 'docker push ' + newTag
             ], async function (err) {
-                if (err) console.log('ERROR ', err);
+                if (err) {
+                    console.log('ERROR ', err);
+                    process.exit();
+                }
                 notifier.notify(`La imagen ${projectData.namespace}/${projectData.image}:${newVersion} fue subida exitosamente.`);
                 console.log(`La imagen ${projectData.namespace}/${projectData.image}:${newVersion} fue subida exitosamente.`)
                 projectData['version'] = newVersion;
@@ -57,7 +154,14 @@ async function main() {
                         let stdoutArray = stdout.split('\n');
                         itemTagged = null;
                         stdoutArray.forEach(item => {
-                            if (item.indexOf(newTag.split(':')[1]) > -1 && (item.indexOf(newTag.split(':')[0]) > -1 && item.indexOf(newTag.split(':')[0] > newTag.length))) {
+                            // if (item.indexOf(newTag.split(':')[1]) > -1 && (item.indexOf(newTag.split(':')[0]) > -1 && item.indexOf(newTag.split(':')[0] > newTag.length))) {
+                            //     itemTagged = item;
+                            // }
+                            if (item.indexOf(`/${projectData.namespace}/${projectData.image}`) > -1 &&
+                                (
+                                    item.indexOf(newTag.split(':')[1]) > -1 && item.indexOf(newTag.split(':')[1]) > item.indexOf(`/${projectData.namespace}/${projectData.image}`)
+                                )
+                            ) {
                                 itemTagged = item;
                             }
                         })
@@ -85,9 +189,9 @@ async function main() {
                             fs.writeFileSync(currentDir + '/chart/Chart.yaml', splitedData.join('\n'));
                             fs.writeFileSync(path, data);
                             console.log('STARTING COPY OF HELM CHART TO SERVER ...');
-                            childProcess(`scp -r -i ~/.ssh/id_gustavo.pub chart/* kb1.quanticotrends.com:/home/ubuntu/kubecode/${projectData.namespace}/`, function (error, stdout, stderr) {
+                            childProcess(`scp -r -i ${sshKey} chart/* kb1.quanticotrends.com:/home/ubuntu/kubecode/${projectData.namespace}/`, function (error, stdout, stderr) {
                                 console.log('UPGRADING HELM...');
-                                childProcess(`ssh -i ~/.ssh/id_gustavo.pub ubuntu@kb1.quanticotrends.com helm upgrade --install ${projectData.namespace} --namespace ${projectData.namespace} /home/ubuntu/kubecode/${projectData.namespace}`, function (error, stdout, stderr) {
+                                childProcess(`ssh -i ${sshKey} ubuntu@kb1.quanticotrends.com helm upgrade --install ${projectData.namespace} --namespace ${projectData.namespace} /home/ubuntu/kubecode/${projectData.namespace}`, function (error, stdout, stderr) {
                                     console.log(stdout);
                                     console.log('=============================')
                                     console.log('FINALIZO')
@@ -102,6 +206,7 @@ async function main() {
             break;
         default:
             console.log('Nothing to do');
+            process.exit()
     }
 }
 main();
