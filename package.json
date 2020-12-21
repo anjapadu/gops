@@ -14,7 +14,7 @@
   "author": "",
   "description": "",
   "dependencies": {
-    "node-notifier": "^5.4.0",
+    "node-notifier": "^8.0.1",
     "simple-ssh": "^1.0.0",
     "ssh-exec": "^2.0.0"
   }
